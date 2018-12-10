@@ -1,0 +1,384 @@
+//词法分析器c语言代码，通过txt文档读入程序 
+
+#include <stdio.h>
+#include "pch.h"
+#include <fstream>
+#include <string>
+#include <iostream>
+using namespace std;
+
+struct Reservedword
+{
+	int number;
+	string name;
+};
+
+Reservedword reservedword[32] = { {1,"auto"},{2,"break"},{3,"case"},{4,"char"},{5,"const"},
+{6,"continue"},{7,"default"},{8,"do"},{9,"double"},{10,"else"},{11,"enum"},{12,"extern"},
+{13,"float"},{14,"for"},{15,"goto"},{16,"if"},{17,"int"},{18,"long"},{19,"return"},{20,"register"},
+{21,"short"},{22,"signed"},{23,"sizeof"},{24,"static"},{25,"struct"},{26,"switch"},{27,"typedef"},
+{28,"union"},{29,"unsigned"},{30,"void"},{31,"main"},{32,"while"} };
+
+struct word
+{
+	int number;
+	char name;
+};
+word limit[8] = { {1,'('},{2,')'},{3,'{'},{4,'}'},{5,'['},{6,']'} ,{7,','},{8,';'} };
+word oper[8] = { {1,'>'},{2,'<'},{3,'='},{4,'+'},{5,'-'},{6,'*'},{7,'/'},{8,'%'} };
+
+struct ID
+{
+	int type;
+	int line;
+	int row;
+	string name;
+};
+int id_count = 0;
+ID id[100];
+
+void clean(char a[], int length)
+{
+	char tem[1000];
+	int count = 0;
+	for (int i = 0; i < length; i++)
+	{
+		if (a[i] == '/'&&a[i + 1] == '/')
+		{
+			while (a[i] != '\n')
+			{
+				i++;
+			}
+		}
+		if (a[i] == '/'&&a[i + 1] == '*')
+		{
+			i += 2;
+			while (a[i] != '*' || a[i + 1] != '/')
+			{
+				i++;
+				if (a[i] = '$')
+				{
+					cout << "注释错误" << endl;
+					exit(0);
+				}
+			}
+			i += 2;		//注释正确，跨过注释
+		}
+		if (a[i] != '\n' && a[i] != '\t' && a[i] != '\r')
+		{
+			tem[count] = a[i];		//若无换行等操作，则将去除注释等无用字符的数组放入tem
+			count++;
+		}
+		else
+		{
+			tem[count] = ' ';
+			count++;
+		}
+	}
+}
+
+bool isalpha(char ch)
+{
+	if ((ch >= 'a'&&ch <= 'z') || (ch >= 'A'&&ch <= 'Z'))
+		return 1;
+	else
+		return 0;
+}
+bool isdigit(char ch)
+{
+	if (ch >= '0'&&ch <= '9')
+		return 1;
+	else
+		return 0;
+}
+bool findoper(char a)
+{
+	for (int i = 0; i < 8; i++)
+	{
+		if (a == oper[i].name)
+			return 1;
+	}
+	return 0;
+}
+bool findlimit(char a)
+{
+	for (int i = 0; i < 8; i++)
+	{
+		if (a == limit[i].name)
+			return 1;
+	}
+	return 0;
+}
+void findreservedword(ID &a)		//查询是否为关键字
+{
+	for (int i = 0; i < 32; i++)
+	{
+		if (a.name == reservedword[i].name)
+		{
+			a.type = 1;						//保留字的类型号为1
+			return;
+		}
+	}
+	a.type = 6;						//标识符类型号为6
+}
+
+void analysis(char a[])
+{
+	int count = 0, line = 1, row = 1;
+	int tem_count = 0;		//暂存数组指针
+	char tem[20] = {};		//暂存识别出的词
+	char ch = a[count];
+	while (ch != EOF)
+	{
+		for (int k = 0; k < 20; k++)	//每次使用前初始化
+			tem[k] = '\0';
+		tem_count = 0;
+
+		while (ch == ' ' || ch == '\t')
+		{
+			count++;
+			ch = a[count];
+		}
+
+		if (isalpha(ch))		//判断是否为标识符
+		{
+			do
+			{
+				tem[tem_count] = ch;
+				tem_count++;
+				count++;
+				ch = a[count];						//判断出标识符后，指针指向下一个字符
+			}while (isalpha(ch) || isdigit(ch));
+			id[id_count].name = tem;				//识别出的标识符放入id数组中
+			id[id_count].line = line;
+			id[id_count].row = row;
+			line++;
+			findreservedword(id[id_count]);
+			id_count++;
+		}
+
+		else if (isdigit(ch))			//判断常数
+		{
+			do
+			{
+				tem[tem_count] = ch;
+				tem_count++;
+				count++;
+				ch = a[count];			//判断出标识符后，指针指向下一个字符
+			} while (isdigit(ch));
+			id[id_count].name = tem;	//识别出的常数放入id数组中
+			id[id_count].type = 5;		//无符号数类型为5
+			if (isalpha(ch))			//数字后接字母，出现错误的标识符
+			{
+				do
+				{
+					tem[tem_count] = ch;
+					tem_count++;
+					count++;
+					ch = a[count];
+				} while (isalpha(ch) || isdigit(ch));
+				id[id_count].name = tem;
+				id[id_count].type = 100;
+			}
+			id[id_count].line = line;
+			id[id_count].row = row;
+			line++;
+			id_count++;
+		}
+
+		else if (ch == '+' || ch == '-' || ch == '*' || ch == '/'  || ch == '%')	//判断算术运算符
+		{
+			tem[tem_count] = ch;
+			if (ch == '+' || ch == '-')			//判别++,--,超前搜索
+			{
+				if (ch == '+')
+				{
+					tem_count++;
+					count++;				//向前搜索一位
+					ch = a[count];
+					if (ch == '+')
+						tem[tem_count] = ch;
+					else
+					{
+						count--;
+						ch = a[count];		//失败，退回一位
+					}
+				}
+				if (ch == '-')
+				{
+					tem_count++;
+					count++;
+					ch = a[count];
+					if (ch == '-')
+						tem[tem_count] = ch;
+					else
+					{
+						count--;
+						ch = a[count];
+					}
+				}
+			}
+			id[id_count].name = tem;	//识别出的算术运算符放入id数组中
+			id[id_count].line = line;
+			id[id_count].row = row;
+			id[id_count].type = 3;		//算术运算符类型为3
+			line++;
+			id_count++;
+			count++;					//指向下一字符
+			ch = a[count];
+		}
+
+		else if (ch == '<' || ch == '>' || ch == '=' || ch == '!')		//关系运算符判断
+		{
+			tem[tem_count] = ch;
+			tem_count++;
+			count++;				//向前搜索一位
+			ch = a[count];
+			if (ch == '=')
+				tem[tem_count] = ch;
+			else
+			{
+				count--;
+				ch = a[count];		//失败，退回一位
+			}
+			id[id_count].name = tem;	
+			id[id_count].line = line;
+			id[id_count].row = row;
+			id[id_count].type = 4;		//算术运算符类型为4
+			line++;
+			id_count++;
+			count++;					//指向下一字符
+			ch = a[count];
+			if (findoper(ch))
+			{
+				id_count--;
+				do
+				{
+					tem[tem_count] = ch;
+					tem_count++;
+					count++;
+					ch = a[count];
+				} while (!findlimit(ch) && ch != ' '&&ch != '\t'&&ch != '\n');
+				id[id_count].name = tem;
+				id[id_count].type = 100;
+				id_count++;
+				ch = a[count];
+			}
+
+		}
+
+		else if (ch == ',' || ch == ';' || ch == '{' || ch == '}' || ch == '(' || ch == ')' || ch == '[' || ch == ']')
+		{
+			id[id_count].name = ch;	
+			id[id_count].line = line;
+			id[id_count].row = row;
+			id[id_count].type = 2;		//算术运算符类型为2
+			line++;
+			id_count++;
+			count++;					//指向下一字符
+			ch = a[count];
+		}
+
+		else if (ch == '\n')			//出现换行
+		{
+			line = 1;					//换行，重新计数
+			row++;						//列数+1
+			count++;					//指向下一字符
+			ch = a[count];
+		}
+
+		else
+		{
+			id[id_count].name = ch;	
+			id[id_count].line = line;
+			id[id_count].row = row;
+			id[id_count].type = 100;		
+			line++;
+			id_count++;
+			count++;					//指向下一字符
+			ch = a[count];
+		}
+	}
+}
+
+int main()
+{
+	ofstream f;
+	f.open("jieguo.txt");
+	char source[1000];
+	int source_num = 0;
+	FILE *fp = fopen("ceshi.txt", "r");
+	if (fp == NULL)
+		cout << "文件为空" << endl;
+	source[source_num] = fgetc(fp);
+	while (source[source_num] != EOF)			//文件结束时会返回EOF
+	{
+		source_num++;
+		source[source_num] = fgetc(fp);			//fgetc一个字符一个字符的读入数组
+	}
+	//clean(source, source_num);
+
+
+	char tem[1000];
+	int count = 0;
+	for (int i = 0; i < source_num; i++)
+	{
+		if (source[i] == '/'&&source[i + 1] == '/')
+		{
+			while (source[i] != '\n')
+			{
+				i++;
+			}
+		}
+		if (source[i] == '/'&&source[i + 1] == '*')
+		{
+			i += 2;
+			while (source[i] != '*' || source[i + 1] != '/')
+			{
+				i++;
+				if (source[i] = '$')
+				{
+					cout << "注释错误" << endl;
+					exit(0);
+				}
+			}
+			i += 2;		//注释正确，跨过注释
+		}
+		tem[count] = source[i];		//若无换行等操作，则将去除注释等无用字符的数组放入tem
+		count++;
+
+	}
+	tem[count] = EOF;
+
+
+	analysis(tem);
+	cout << "单词\t二元序列\t类型\t\t位置" << endl;
+	for (int i = 0; i < id_count; i++)
+	{
+		switch (id[i].type)
+		{
+		case 1:
+			cout << id[i].name << "\t( " << id[i].type << ", " << id[i].name << " )\t" << "关键字" << "\t\t( " << id[i].line << "," << id[i].row << " )" << endl;
+			break;
+		case 2:
+			cout << id[i].name << "\t( " << id[i].type << ", " << id[i].name << " )\t" << "分界符" << "\t\t( " << id[i].line << "," << id[i].row << " )" << endl;
+			break;
+		case 3:
+			cout << id[i].name << "\t( " << id[i].type << ", " << id[i].name << " )\t" << "算术运算符" << "\t( " << id[i].line << "," << id[i].row << " )" << endl;
+			break;
+		case 4:
+			cout << id[i].name << "\t( " << id[i].type << ", " << id[i].name << " )\t" << "关系运算符" << "\t( " << id[i].line << "," << id[i].row << " )" << endl;
+			break;
+		case 5:
+			cout << id[i].name << "\t( " << id[i].type << ", " << id[i].name << " )\t" << "无符号数" << "\t\t( " << id[i].line << "," << id[i].row << " )" << endl;
+			break;
+		case 6:
+			cout << id[i].name << "\t( " << id[i].type << ", " << id[i].name << " )\t" << "标识符" << "\t\t( " << id[i].line << "," << id[i].row << " )" << endl;
+			break;
+		case 100:
+			cout << id[i].name << "\t error " << " \t" << "error" << "\t\t( " << id[i].line << "," << id[i].row << " )" << endl;
+			break;
+		}
+		f << id[i].name << "\t( " << id[i].type << ", " << id[i].name << " )\t" << "哈哈" << "\t( " << id[i].line << "," << id[i].row << " )" << endl;
+	}
+}
