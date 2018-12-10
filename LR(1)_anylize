@@ -1,0 +1,407 @@
+import wx
+
+FIRST = dict()
+GRAMMER = dict()
+ITEM = dict()
+LLR1_ITEM = dict()
+LLR1_ITEM_2 = dict()
+GO = dict()
+ACTION = dict()
+GOTO = dict()
+string_stack = list()   #输入串
+symbol_stack = list()   #符号栈
+state_stack = list()
+
+class haha(wx.Frame):
+    def __init__(self, parent):
+        wx.Frame.__init__(self, parent, id=wx.ID_ANY, title="实验三", pos=wx.DefaultPosition, size=wx.Size(660, 527),
+                          style=wx.CAPTION | wx.CLOSE_BOX | wx.MINIMIZE_BOX | wx.SYSTEM_MENU | wx.TAB_TRAVERSAL, name=u"Main")
+        self.m_staticText3 = wx.StaticText(self, wx.ID_ANY, u"请选择文法文件的位置", wx.DefaultPosition, wx.DefaultSize, 0)
+        self.m_ListCtrl1 = wx.ListCtrl(self, -1, style=wx.LC_REPORT, size=wx.Size(630, 510))
+        self.m_ListCtrl1.InsertColumn(0, "步骤")
+        self.m_ListCtrl1.InsertColumn(1, "状态栈")
+        self.m_ListCtrl1.InsertColumn(2, "符号栈")
+        self.m_ListCtrl1.InsertColumn(3, "输入串")
+        self.m_ListCtrl1.InsertColumn(4, "动作说明")
+        self.get_grammer()
+        self.get_item()
+        self.get_first()
+        self.get_LLR1_item()
+        self.get_go()
+        self.get_goto()
+        self.get_action()
+        self.LLR1_anylize()
+
+
+    def get_grammer(self):
+        count = '1'
+        file_grammer = open("test.txt")                                     #readlines()会读入文件的所有行
+        for line in file_grammer.readlines():                               #当文法有'|'时，从'|'进行切片，用replace(),将\n替换为""空字符
+            front_infer = line[0]
+            back_infer = line[3:].replace("\n", "").split("|")
+            for a in back_infer:                                            #若出现切边，则需一个一个取出放入每个Vn的列表中，否则会出现列表嵌套列表
+                GRAMMER[count] = list()
+                GRAMMER[count].append(front_infer)
+                for b in a:
+                    GRAMMER[count].append(b)
+                count = str(int(count) + 1)                                 #count用于表示产生式序号，为方便使用，将其转为字符表示
+        print("GRAMMER: ", GRAMMER, "\n")
+
+
+    def get_item(self):
+        ITEM['S'] = ['@' + GRAMMER['1'][0], GRAMMER['1'][0] + '@']          #拓广文法，@表示点
+        for key in GRAMMER:
+            ITEM[GRAMMER[key][0]]=list()
+        for key in GRAMMER:
+            tem = ''
+            for value in GRAMMER[key][1:]:
+                tem = tem + value
+            count = 0
+            for x in range(0, len(GRAMMER[key])):                           #长度为len的产生式右部有len+1个项目
+                tem = list(tem)
+                tem.insert(count, '@')
+                tem = "".join(tem)  # 字符串转为列表，插入@，在转回字符串
+                ITEM[GRAMMER[key][0]].append(tem)
+                tem = list(tem)
+                tem.pop(count)
+                tem = "".join(tem)
+                count = count + 1
+        print("ITEM: ", ITEM)
+
+
+    def get_first(self):
+        for a in GRAMMER:
+            FIRST[GRAMMER[a][0]] = list()
+        for a in GRAMMER:                           #步骤1，若X->a... 则将a加入FIRST(X),若X->ε,则将ε加入FIRST(X)
+            infer = "".join(GRAMMER[a][1:])         #得到推导式
+            if not (infer[0].isupper()):
+                FIRST[GRAMMER[a][0]].append(infer[0])
+        for i in range(1, 6):
+            for a in GRAMMER:
+                b = "".join(GRAMMER[a][1:])                #步骤2，若X->Y...，则将FIRST(Y)加入FIRST(X)
+                count = 0
+                tem = 0
+                if (b[0].isupper()):
+                    for c in FIRST[b[0]]:
+                        FIRST[GRAMMER[a][0]].append(c)
+                        for x in FIRST:  # 去重
+                            FIRST[x] = list(set(FIRST[x]))
+        print("FIRST: ",FIRST)
+
+
+    def get_LLR1_item(self):
+        LLR1_ITEM['0'] = ["S->" + ITEM["S"][0] + ",#"]              #构造I0入口
+        for key in LLR1_ITEM:                           #此循环专门用于构造出I0项目集
+            for iterator in LLR1_ITEM[key]:             #迭代构造，直到项目集不再增大
+                B_local = iterator.find("@") + 1            # B_local指向@后的字符
+                b_local = B_local + 1                       # b_local指向B后的字符
+                if iterator[B_local].isupper():  # 若@后跟非终结符
+                    tem = ''
+                    for a in ITEM[iterator[B_local]]:
+                        tem = ''
+                        if a[0] == '@':
+                            tem = tem + iterator[B_local] + "->" + a + ","
+                            if b_local < iterator.find(","):                #判断是否越界
+                                if iterator[b_local].isupper():
+                                    for x in FIRST[iterator[b_local]]:
+                                        tem = tem + x                       #若b_local为非终结符，将b的first集作为展望符
+                                        if tem not in LLR1_ITEM[key]:  # 判重，使得项目集中不出现相同的项目
+                                            LLR1_ITEM[key].append(tem)
+                                        tem = tem[:-1]
+                                else:
+                                    tem = tem + iterator[b_local]                      #若b为终结符，将b作为展望符
+                                    if tem not in LLR1_ITEM[key]:               #判重，使得项目集中不出现相同的项目
+                                        LLR1_ITEM[key].append(tem)
+                            else:
+                                tem = tem + iterator[b_local+1]             #b_local越界，即指向'，'，则将继承上面的展望符
+                                if tem not in LLR1_ITEM[key]:
+                                    LLR1_ITEM[key].append(tem)
+
+        LLR1_ITEM_2['0'] = LLR1_ITEM['0']
+
+        ###########——————开始从I0迭代构造各个项目集——————###########
+
+        state_count = 1
+        COUNT = 1
+        while (COUNT <= 233):
+            go_key = len(GO.keys())         #循环控制条件
+
+            for key in LLR1_ITEM:
+                for iterator in LLR1_ITEM[key]:
+                    item_local = iterator.find("@")         #item_local指向'@'
+                    B_local = iterator.find("@") + 1        #B_local指向@后字符
+                    B = iterator[B_local]                   #B为@后字符
+
+                    if B != ",":
+                        convert_word = B                    #convert_word存下转换的字符
+
+                    same_tem = list()
+                    for same_word in LLR1_ITEM[key]:
+                        same_local = same_word.find("@") + 1
+                        same = same_word[same_local]                        #same为@后的字符
+                        if same == B and same != ",":                       #same_tem中存放初始母子式
+                            if same_word not in same_tem:
+                                ha = list(same_word)
+                                ha[same_word.find("@")], ha[same_word.find("@") + 1] = ha[same_word.find("@")+1], ha[same_word.find("@")]
+                                add_word = "".join(ha)                     #@和相邻字符交换
+                                same_tem.append(add_word)                  #将@后字符相同的存入same_tem列表中
+
+                    #以上形成一个初始母子式，接下来对其迭代
+
+                    for formula in same_tem:                             #对same_tem要进行迭代
+                        divide_local = formula.find("@")
+                        AA_local = formula.find("@") + 1
+                        aa_local = AA_local + 1
+                        comma_local = formula.find(",")                 #comma_local是逗号位置
+
+                        divide = formula[divide_local]                  #divide为@，AA为@后字符，aa为AA后字符
+                        AA = formula[AA_local]
+                        aa = formula[aa_local]
+
+                        if AA.isupper():                                #若AA为非终结符，即有产生式
+                            tem = ''
+                            for VN in ITEM[AA]:                         #对于AA的每个产生式   AA->@..  都要放进去
+                                tem = ''
+                                if VN[0] == '@':
+                                    tem = tem + AA + "->" + VN + ","     #将AA->@..放入，并加上‘，’用于分割展望符
+                                    if aa_local < comma_local:                #判断是否越界，没越界就说明AA后面有某种字符，就判断first
+                                        if aa.isupper():                #aa是非终结符时
+                                            for x in FIRST[aa]:
+                                                tem = tem + x
+                                                if tem not in same_tem:         #判重，若same中还没迭代出此产生式，就将其加入
+                                                    same_tem.append(tem)
+                                                tem = tem[:-1]
+                                        else:                                   #若aa为其他字符，则其FIRST集为它本身
+                                            tem = tem + aa
+                                            if tem not in same_tem:
+                                                same_tem.append(tem)
+                                    else:                                       #若越界，即AA后面是逗号
+                                        tem = tem + formula[-1]                    #则将继承上面的展望符
+                                        if tem not in same_tem:
+                                            same_tem.append(tem)
+
+                    num = 0
+                    for qw in LLR1_ITEM_2:
+                        zx = LLR1_ITEM_2[qw]
+                        if sorted(same_tem) == sorted(zx):
+                            break
+                        num = num +1
+
+                    if num == len(LLR1_ITEM_2.keys()) and same_tem != []:
+                        LLR1_ITEM_2[str(state_count)] = same_tem
+                        GO[(key, convert_word)] = str(state_count)          #构建GO函数，此处只能构建一部分
+                        state_count = state_count + 1
+
+
+
+            for x in LLR1_ITEM_2:
+                LLR1_ITEM[x] = LLR1_ITEM_2[x]
+            if go_key == len(GO.keys()):
+                break
+        for a in LLR1_ITEM:
+            print("I"+a, len(LLR1_ITEM[a]), LLR1_ITEM[a])
+
+
+    def get_go(self):
+        for key in LLR1_ITEM:
+            for iterator in LLR1_ITEM[key]:
+                item_local = iterator.find("@")  # item_local指向'@'
+                B_local = iterator.find("@") + 1  # B_local指向@后字符
+                B = iterator[B_local]  # B为@后字符
+
+                if B != ",":
+                    convert_word = B  # convert_word存下转换的字符
+
+                same_tem = list()
+                for same_word in LLR1_ITEM[key]:
+                    same_local = same_word.find("@") + 1
+                    same = same_word[same_local]  # same为@后的字符
+                    if same == B and same != ",":  # same_tem中存放初始母子式
+                        if same_word not in same_tem:
+                            ha = list(same_word)
+                            ha[same_word.find("@")], ha[same_word.find("@") + 1] = ha[same_word.find("@") + 1], ha[
+                                same_word.find("@")]
+                            add_word = "".join(ha)  # @和相邻字符交换
+                            same_tem.append(add_word)  # 将@后字符相同的存入same_tem列表中
+
+                # 以上形成一个初始母子式，接下来对其迭代
+
+                for formula in same_tem:  # 对same_tem要进行迭代
+                    divide_local = formula.find("@")
+                    AA_local = formula.find("@") + 1
+                    aa_local = AA_local + 1
+                    comma_local = formula.find(",")  # comma_local是逗号位置
+
+                    divide = formula[divide_local]  # divide为@，AA为@后字符，aa为AA后字符
+                    AA = formula[AA_local]
+                    aa = formula[aa_local]
+
+                    if AA.isupper():  # 若AA为非终结符，即有产生式
+                        tem = ''
+                        for VN in ITEM[AA]:  # 对于AA的每个产生式   AA->@..  都要放进去
+                            tem = ''
+                            if VN[0] == '@':
+                                tem = tem + AA + "->" + VN + ","  # 将AA->@..放入，并加上‘，’用于分割展望符
+                                if aa_local < comma_local:  # 判断是否越界，没越界就说明AA后面有某种字符，就判断first
+                                    if aa.isupper():  # aa是非终结符时
+                                        for x in FIRST[aa]:
+                                            tem = tem + x
+                                            if tem not in same_tem:  # 判重，若same中还没迭代出此产生式，就将其加入
+                                                same_tem.append(tem)
+                                            tem = tem[:-1]
+                                    else:  # 若aa为其他字符，则其FIRST集为它本身
+                                        tem = tem + aa
+                                        if tem not in same_tem:
+                                            same_tem.append(tem)
+                                else:  # 若越界，即AA后面是逗号
+                                    tem = tem + formula[-1]  # 则将继承上面的展望符
+                                    if tem not in same_tem:
+                                        same_tem.append(tem)
+
+                for qw in LLR1_ITEM_2:
+                    if sorted(same_tem) == sorted(LLR1_ITEM_2[qw]):
+                        GO[(key, convert_word)] = qw
+        #print("GO", len(GO.values()), GO, "\n")
+        i = 0
+        for a in GO:
+            print("GO: ", a, GO[a], end='')
+            i = i + 1
+            if i == 5:
+                print("\n")
+                i = 0
+        print("\n")
+
+
+    def get_action(self):
+        for a in GO:
+            if not a[1].isupper():
+                ACTION[a] = ["s", GO[a]]
+        for x in LLR1_ITEM:
+            for y in LLR1_ITEM[x]:
+                if y[-3] == '@':
+                    tem = y
+                    if tem == "S->E@,#":
+                        ACTION[(x, '#')] = 'acc'
+                    else:
+                        tem = y[:-3]
+                        tem = list(tem)
+                        tem.remove("-")
+                        tem.remove(">")
+                        for g in GRAMMER:
+                            if tem == GRAMMER[g]:
+                                ACTION[(x, y[-1])] = ["r", g]
+        #print("ACTION: ",len(ACTION.keys()), ACTION)
+        i = 0
+        for a in ACTION:
+            print("ACTION: ", a, ACTION[a], end='')
+            i = i + 1
+            if i == 5:
+                print("\n")
+                i = 0
+
+
+    def get_goto(self):
+        for a in GO:
+            if a[1].isupper():
+                GOTO[a] = [GO[a]]
+        #print("GOTO: ",len(GOTO.keys()), GOTO)
+        i = 0
+        for a in GOTO:
+            print("GOTO: ", a, GOTO[a], end='')
+            i = i + 1
+            if i == 5:
+                print("\n")
+                i = 0
+
+
+    def LLR1_anylize(self):
+        anylize_string = input()
+        string_stack = list(anylize_string)
+        state_stack.append('0')
+        symbol_stack.append("#")
+        count = 0
+        index = self.m_ListCtrl1.InsertItem(self.m_ListCtrl1.GetItemCount(), str(1))
+        self.m_ListCtrl1.SetItem(index, 0, str(count))
+        self.m_ListCtrl1.SetItem(index, 1, "".join(state_stack))
+        self.m_ListCtrl1.SetItem(index, 2, "".join(symbol_stack))
+        self.m_ListCtrl1.SetItem(index, 3, "".join(string_stack))
+        self.m_ListCtrl1.SetItem(index, 4, "初始")
+        self.m_ListCtrl1.SetColumnWidth(0, 120)
+        self.m_ListCtrl1.SetColumnWidth(1, 120)
+        self.m_ListCtrl1.SetColumnWidth(2, 120)
+        self.m_ListCtrl1.SetColumnWidth(3, 120)
+        self.m_ListCtrl1.SetColumnWidth(4, 175)
+        count = count + 1
+        while symbol_stack:
+            string_point = string_stack[0]                                  #string_point指向输入串首端
+            state_point = state_stack[-1]  # state_point指向状态栈末端,表示当前状态
+
+            if ACTION[(state_point, string_point)][0] == 's':               #遇到状态转移指令s..
+                state_stack.append(ACTION[(state_point, string_point)][1])   #移入状态
+                tem = string_stack.pop(0)                                   #弹出输入串首位,并将其加入符号栈
+                symbol_stack.append(tem)
+                print(state_stack, "\t", symbol_stack, "\t", string_stack)
+                dongzuo = "".join(ACTION[(state_point, string_point)]) + "状态" + ACTION[(state_point, string_point)][1] + "入栈"
+                index = self.m_ListCtrl1.InsertItem(self.m_ListCtrl1.GetItemCount(), str(1))
+                self.m_ListCtrl1.SetItem(index, 0, str(count))
+                self.m_ListCtrl1.SetItem(index, 1, "".join(state_stack))
+                self.m_ListCtrl1.SetItem(index, 2, "".join(symbol_stack))
+                self.m_ListCtrl1.SetItem(index, 3, "".join(string_stack))
+                self.m_ListCtrl1.SetItem(index, 4, dongzuo)
+                self.m_ListCtrl1.SetColumnWidth(0, 120)
+                self.m_ListCtrl1.SetColumnWidth(1, 120)
+                self.m_ListCtrl1.SetColumnWidth(2, 120)
+                self.m_ListCtrl1.SetColumnWidth(3, 120)
+                self.m_ListCtrl1.SetColumnWidth(4, 175)
+                count = count + 1
+
+            elif ACTION[(state_point, string_point)][0] == 'r':             #遇到规约指令
+                rx = ACTION[(state_point, string_point)][1]                 #rx为规约使用的产生式的序号
+                length = len(GRAMMER[rx]) - 1                               #产生式长度，以判断规约掉几个状态
+                for symbol_pop_num in range(0, length):
+                    symbol_stack.pop()
+                for state_pop_num in range(0, length):
+                    state_stack.pop()                                       #符号栈和状态栈弹出length个状态
+                dongzuo = "".join(ACTION[(state_point, string_point)]) + ": "+"".join(GRAMMER[rx][0]) + "->" + "".join(GRAMMER[rx][1:])
+                symbol_stack.append(GRAMMER[rx][0])                         #将规约后的符号入符号栈
+                state_point = state_stack[-1]
+                symbol_point = symbol_stack[-1]                             #symbol_point指向符号栈末端
+                tem = GOTO[(state_point, symbol_point)][0]
+                state_stack.append(tem)
+                print(state_stack, "\t", symbol_stack, "\t", string_stack)
+
+                index = self.m_ListCtrl1.InsertItem(self.m_ListCtrl1.GetItemCount(), str(1))
+                self.m_ListCtrl1.SetItem(index, 0, str(count))
+                self.m_ListCtrl1.SetItem(index, 1, "".join(state_stack))
+                self.m_ListCtrl1.SetItem(index, 2, "".join(symbol_stack))
+                self.m_ListCtrl1.SetItem(index, 3, "".join(string_stack))
+                self.m_ListCtrl1.SetItem(index, 4, dongzuo)
+                self.m_ListCtrl1.SetColumnWidth(0, 120)
+                self.m_ListCtrl1.SetColumnWidth(1, 120)
+                self.m_ListCtrl1.SetColumnWidth(2, 120)
+                self.m_ListCtrl1.SetColumnWidth(3, 120)
+                self.m_ListCtrl1.SetColumnWidth(4, 175)
+                count = count + 1
+
+            elif ACTION[(state_point, string_point)][:] == 'acc':           #完成
+                print("接受")
+                index = self.m_ListCtrl1.InsertItem(self.m_ListCtrl1.GetItemCount(), str(1))
+                self.m_ListCtrl1.SetItem(index, 0, str(count))
+                self.m_ListCtrl1.SetItem(index, 1, "".join(state_stack))
+                self.m_ListCtrl1.SetItem(index, 2, "".join(symbol_stack))
+                self.m_ListCtrl1.SetItem(index, 3, "".join(string_stack))
+                self.m_ListCtrl1.SetItem(index, 4, "".join("分析成功"))
+                self.m_ListCtrl1.SetColumnWidth(0, 120)
+                self.m_ListCtrl1.SetColumnWidth(1, 120)
+                self.m_ListCtrl1.SetColumnWidth(2, 120)
+                self.m_ListCtrl1.SetColumnWidth(3, 120)
+                self.m_ListCtrl1.SetColumnWidth(4, 175)
+                count = count + 1
+                break
+
+
+if __name__ == '__main__':
+    app = wx.App(False)
+    b = haha(None)
+    b.Show(True)
+    app.MainLoop()
